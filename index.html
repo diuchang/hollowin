@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800&display=swap" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============ MAIN LAYOUT: Sidebar + Note List ============ -->
+<div id="app" class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name">Notes</span>
+    </div>
+
+    <button id="btn-new-note" class="btn-new">
+      <span class="plus">+</span> New Note
+    </button>
+
+    <nav class="nav">
+      <button class="nav-item" data-view="all">
+        <span class="nav-ico">🗒</span><span class="nav-label">All Notes</span>
+        <span class="nav-count" data-count="all"></span>
+      </button>
+      <button class="nav-item" data-view="favourite">
+        <span class="nav-ico">⭐</span><span class="nav-label">Favourite</span>
+        <span class="nav-count" data-count="favourite"></span>
+      </button>
+      <button class="nav-item" data-view="trash">
+        <span class="nav-ico">🗑</span><span class="nav-label">Trash</span>
+        <span class="nav-count" data-count="trash"></span>
+      </button>
+    </nav>
+
+    <div class="nav-section">
+      <div class="nav-section-head">
+        <span>Folders</span>
+        <button id="btn-new-folder" class="icon-btn" title="New folder">+</button>
+      </div>
+      <div id="folder-list" class="folder-list"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="list-head">
+      <div class="list-title-row">
+        <h1 id="list-title">All Notes</h1>
+        <span id="list-count" class="list-count"></span>
+        <div id="folder-actions" class="folder-actions" hidden>
+          <button class="ghost-btn" data-act="rename">Rename</button>
+          <div class="color-picker" id="folder-colors"></div>
+          <button class="ghost-btn danger" data-act="delete-folder">Delete folder</button>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <span class="search-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="M15.4 15.4 L21 21" />
+          </svg>
+        </span>
+        <input id="search" type="search" placeholder="Search notes…" autocomplete="off" />
+      </div>
+
+      <div id="filters" class="filters">
+        <button class="filter is-active" data-range="all">All</button>
+        <button class="filter" data-range="today">Today</button>
+        <button class="filter" data-range="week">This Week</button>
+        <button class="filter" data-range="month">This Month</button>
+      </div>
+
+      <div id="trash-head" class="trash-head" hidden>
+        <p class="trash-note">Notes and folders in Trash are deleted permanently after <strong>30 days</strong>.</p>
+        <button id="btn-empty-trash" class="ghost-btn danger">Empty Trash</button>
+      </div>
+    </header>
+
+    <div id="note-list" class="note-list"></div>
+  </main>
+</div>
+
+<!-- ============ NOTE EDITOR: separate full-screen flow ============ -->
+<section id="editor" class="editor" hidden>
+  <header class="editor-head">
+    <button id="btn-back" class="ghost-btn back">← Back</button>
+    <div class="editor-actions">
+      <button id="btn-fav" class="icon-action" title="Favourite">☆</button>
+      <button id="btn-move" class="icon-action" title="Move to Folder">📁</button>
+      <button id="btn-del-note" class="icon-action" title="Delete">🗑</button>
+      <button id="btn-panel" class="icon-action" title="Customize">⚙</button>
+    </div>
+  </header>
+
+  <div class="editor-body">
+    <div class="editor-page">
+      <div class="editor-sheet">
+        <input id="note-title" class="note-title" placeholder="Title…" />
+        <div class="note-meta">
+          <span id="meta-dates"></span>
+          <span class="dot">·</span>
+          <span id="meta-words"></span>
+          <span class="dot">·</span>
+          <span id="meta-saved" class="saved">Saved</span>
+        </div>
+        <div id="note-content" class="note-content" contenteditable="true" spellcheck="false"></div>
+      </div>
+    </div>
+
+    <aside id="panel" class="panel">
+      <div class="panel-group">
+        <h3>Theme Style</h3>
+        <div id="theme-swatches" class="swatches"></div>
+      </div>
+
+      <div class="panel-group">
+        <h3>Text Editor</h3>
+
+        <label class="field">
+          <span>Font</span>
+          <select id="opt-font">
+            <option value="sans">Sans</option>
+            <option value="serif">Serif</option>
+            <option value="mono">Mono</option>
+            <option value="hand">Handwriting</option>
+          </select>
+        </label>
+
+        <div class="field">
+          <span>Format</span>
+          <div class="btn-row">
+            <button class="fmt" data-cmd="bold" title="Bold"><b>B</b></button>
+            <button class="fmt" data-cmd="italic" title="Italic"><i>I</i></button>
+            <button class="fmt" data-cmd="underline" title="Underline"><u>U</u></button>
+            <button class="fmt" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span>Alignment</span>
+          <div class="btn-row">
+            <button class="fmt" data-cmd="justifyLeft" title="Align left">◧</button>
+            <button class="fmt" data-cmd="justifyCenter" title="Align center">◫</button>
+            <button class="fmt" data-cmd="justifyRight" title="Align right">◨</button>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Size <em id="size-val">16px</em></span>
+          <input id="opt-size" type="range" min="13" max="24" step="1" />
+        </label>
+
+        <label class="field">
+          <span>Spacing <em id="spacing-val">1.6</em></span>
+          <input id="opt-spacing" type="range" min="1.2" max="2.4" step="0.1" />
+        </label>
+      </div>
+
+      <div class="panel-group">
+        <h3>Others</h3>
+        <div class="btn-row wrap">
+          <button class="chip" id="ins-image">🖼 Image</button>
+          <button class="chip" id="ins-link">🔗 Link</button>
+          <button class="chip" id="ins-bullet">• Bullets</button>
+          <button class="chip" id="ins-emoji">😀 Emoji</button>
+        </div>
+        <div id="emoji-grid" class="emoji-grid" hidden></div>
+      </div>
+    </aside>
+  </div>
+  <input id="image-input" type="file" accept="image/*" hidden />
+</section>
+
+<!-- ============ MODALS ============ -->
+<div id="modal-root" class="modal-root" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div id="modal-foot" class="modal-foot"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
