@@ -22,6 +22,13 @@ const FONTS = {
   mono: 'var(--f-mono)', hand: 'var(--f-hand)',
 };
 
+const FONT_OPTIONS = [
+  { id: 'sans', label: 'Sans' },
+  { id: 'serif', label: 'Serif' },
+  { id: 'mono', label: 'Mono' },
+  { id: 'hand', label: 'Handwriting' },
+];
+
 const EMOJIS = ['😀','😄','😍','🤔','😴','😭','🥳','👍','🙏','💪','🔥','✨','⭐','❤️','💡','📌','✅','❌','⚠️','📝','📚','🎯','🎉','☕','🌱','🌙','☀️','🍀','🎵','🏃','✈️','🏠','💰','⏰','📅','🤝','👀','💭'];
 
 const $ = (sel) => document.querySelector(sel);
@@ -163,6 +170,10 @@ function renderSidebar() {
       <span class="n">${notesInFolder(f.id).length || ''}</span>`;
     btn.querySelector('.name').textContent = f.name;
     btn.onclick = () => { state.view = 'folder'; state.folderId = f.id; render(); };
+    btn.oncontextmenu = (e) => {
+      e.preventDefault();
+      openFolderContextMenu(f.id, e.clientX, e.clientY);
+    };
     wrap.appendChild(btn);
   }
 }
@@ -250,6 +261,10 @@ function renderList() {
     if (folder) card.querySelector('.fname').textContent = folder.name;
 
     card.onclick = () => openEditor(n.id);
+    card.oncontextmenu = (e) => {
+      e.preventDefault();
+      openNoteContextMenu(n.id, e.clientX, e.clientY);
+    };
     wrap.appendChild(card);
   }
 }
@@ -257,14 +272,28 @@ function renderList() {
 function emptyState() {
   const el = document.createElement('div');
   el.className = 'empty-state';
+  // CTA tạo note chỉ hợp lý khi "trống" nghĩa là chưa có note nào để tạo mới —
+  // không hiện khi trống do lọc search/date-range (nên gỡ lọc) hay Favourite (nên đánh sao note có sẵn).
+  const showCta = !state.query && state.range === 'all' && (state.view === 'all' || state.view === 'folder');
   const msg =
     state.query ? ['🔍', 'No notes found', `Nothing matches “${state.query}”`]
     : state.range !== 'all' ? ['📭', 'No notes in this time range', 'Try the All tab']
     : state.view === 'favourite' ? ['⭐', 'No favourites yet', 'Open a note and tap ☆ to star it']
-    : state.view === 'folder' ? ['📁', 'This folder is empty', 'Tap "+ New Note" to write the first one']
-    : ['🗒', 'No notes yet', 'Tap "+ New Note" to start writing'];
+    : state.view === 'folder' ? ['📁', 'This folder is empty', 'Create the first note in this folder']
+    : ['🗒', 'No notes yet', 'Create your first note to get started'];
 
   el.innerHTML = `<span class="big">${msg[0]}</span><p><strong>${escapeHtml(msg[1])}</strong></p><p>${escapeHtml(msg[2])}</p>`;
+
+  if (showCta) {
+    const folder = state.view === 'folder' ? folderById(state.folderId) : null;
+    const btn = document.createElement('button');
+    btn.className = 'btn-new empty-state-cta';
+    btn.innerHTML = folder
+      ? `<span class="plus">+</span> New Note in ${escapeHtml(folder.name)}`
+      : '<span class="plus">+</span> New Note';
+    btn.onclick = () => createNoteInCurrentView();
+    el.appendChild(btn);
+  }
   return el;
 }
 
@@ -342,6 +371,201 @@ function render() {
   renderList();
 }
 
+// ---------------- Shared note actions ----------------
+// Dùng chung cho cả nút trên Editor lẫn menu chuột phải trên note-card,
+// nên không đụng tới state.editing trực tiếp — tự tra note theo id.
+
+async function toggleFavourite(id) {
+  const note = state.notes.find((n) => n.id === id);
+  if (!note) return;
+  const isFavourite = !note.isFavourite;
+  // Favourite độc lập với folder → không đụng vào folderId
+  await db.updateNote(id, { isFavourite }, { touch: false });
+  await refresh();
+  if (state.editing?.id === id) {
+    state.editing.isFavourite = isFavourite;
+    renderEditorChrome(state.editing);
+  } else {
+    render();
+  }
+  toast(isFavourite ? 'Added to Favourite' : 'Removed from Favourite');
+}
+
+// Move to Folder — 1 note thuộc tối đa 1 folder
+function openMoveModal(id) {
+  const note = state.notes.find((n) => n.id === id);
+  if (!note) return;
+  const current = note.folderId;
+
+  $('#modal-title').textContent = 'Move to Folder';
+  const list = liveFolders();
+  $('#modal-body').innerHTML =
+    `<p>A note belongs to at most 1 folder.</p><div class="modal-list" id="move-list"></div>` +
+    (list.length ? '' : '<p style="margin-top:10px">No folders yet — create one in the sidebar first.</p>');
+
+  const wrap = $('#move-list');
+  const mk = (label, color, folderId) => {
+    const b = document.createElement('button');
+    b.className = folderId === current ? 'is-current' : '';
+    b.innerHTML = `<span class="swatch" style="background:${color}"></span><span class="l"></span>${folderId === current ? '<span style="margin-left:auto">✓</span>' : ''}`;
+    b.querySelector('.l').textContent = label;
+    b.onclick = async () => {
+      closeModal();
+      await db.updateNote(id, { folderId });
+      await refresh();
+      if (state.editing?.id === id) {
+        state.editing.folderId = folderId;
+        renderEditorChrome(state.editing);
+      } else {
+        render();
+      }
+      toast(folderId ? `Moved to "${label}"` : 'Moved to All Notes');
+    };
+    return b;
+  };
+
+  wrap.appendChild(mk('All Notes (no folder)', '#c9c3b9', null));
+  for (const f of list) wrap.appendChild(mk(f.name, FOLDER_COLORS[f.color], f.id));
+
+  const foot = $('#modal-foot');
+  foot.innerHTML = '';
+  const close = document.createElement('button');
+  close.className = 'ghost-btn';
+  close.textContent = 'Close';
+  close.onclick = closeModal;
+  foot.appendChild(close);
+  $('#modal-root').hidden = false;
+}
+
+async function deleteNoteById(id) {
+  const ok = await confirmModal({
+    title: 'Delete note?',
+    body: '<p>The note moves to Trash and can be restored within 30 days.</p>',
+    confirm: 'Delete',
+    danger: true,
+  });
+  if (!ok) return;
+
+  if (state.editing?.id === id) {
+    pendingPatch = null;
+    clearTimeout(saveTimer);
+    state.editing = null;
+    $('#editor').hidden = true;
+    $('#app').classList.remove('is-hidden');
+  }
+  await db.softDeleteNote(id);
+  await refresh();
+  render();
+  toast('Note moved to Trash');
+}
+
+// ---- Floating panel: dùng chung cho menu chuột phải trên note-card
+//      và dropdown chọn nhanh giá trị (Size/Spacing) ----
+
+let floatingMenuEl = null;
+
+function closeFloatingMenu() {
+  if (!floatingMenuEl) return;
+  floatingMenuEl.remove();
+  floatingMenuEl = null;
+  document.removeEventListener('click', closeFloatingMenu);
+  document.removeEventListener('contextmenu', closeFloatingMenu, true);
+  document.removeEventListener('scroll', closeFloatingMenuOnOutsideScroll, true);
+  document.removeEventListener('keydown', floatingMenuKeydown);
+}
+
+function floatingMenuKeydown(e) {
+  if (e.key === 'Escape') closeFloatingMenu();
+}
+
+// Listener 'scroll' đăng ký ở capture phase nên bắt được cả sự kiện cuộn xảy ra
+// NGAY BÊN TRONG panel (vd danh sách value-picker dài, tự nó overflow-y:auto).
+// Phải bỏ qua trường hợp đó, chỉ đóng khi người dùng cuộn nội dung phía SAU panel.
+function closeFloatingMenuOnOutsideScroll(e) {
+  if (floatingMenuEl && floatingMenuEl.contains(e.target)) return;
+  closeFloatingMenu();
+}
+
+// x,y là góc trên-trái mong muốn; panel tự ghim lại trong viewport nếu bị tràn mép phải/dưới
+function openFloatingMenu(x, y, extraClass, fill) {
+  closeFloatingMenu();
+
+  const menu = document.createElement('div');
+  menu.className = extraClass ? `ctx-menu ${extraClass}` : 'ctx-menu';
+  fill(menu);
+  document.body.appendChild(menu);
+
+  const EDGE_GAP = 12; // luôn chừa khoảng cách với mép màn hình, không để panel dán sát lề
+  const vw = window.innerWidth, vh = window.innerHeight;
+  // Cố tình dùng offsetWidth/offsetHeight thay vì getBoundingClientRect(): panel vừa gắn vào DOM
+  // đã bắt đầu chạy animation "pop" (có scale(.98) lúc khởi động), nên rect đo ngay lúc này bị co nhỏ hơn
+  // kích thước thật, làm khoảng cách mép bị lệch vài px. offsetWidth/offsetHeight không bị transform ảnh hưởng.
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  menu.style.left = `${Math.max(EDGE_GAP, Math.min(x, vw - w - EDGE_GAP))}px`;
+  menu.style.top = `${Math.max(EDGE_GAP, Math.min(y, vh - h - EDGE_GAP))}px`;
+
+  floatingMenuEl = menu;
+  // Trì hoãn 1 tick để chính cú click vừa rồi không lập tức đóng ngay panel mới mở
+  setTimeout(() => {
+    document.addEventListener('click', closeFloatingMenu);
+    document.addEventListener('contextmenu', closeFloatingMenu, true);
+    document.addEventListener('scroll', closeFloatingMenuOnOutsideScroll, true);
+    document.addEventListener('keydown', floatingMenuKeydown);
+  }, 0);
+  return menu;
+}
+
+function openNoteContextMenu(id, x, y) {
+  const note = state.notes.find((n) => n.id === id);
+  if (!note) return;
+
+  openFloatingMenu(x, y, null, (menu) => {
+    menu.innerHTML = `
+      <button data-act="fav">${note.isFavourite ? '☆ Remove from Favourite' : '⭐ Add to Favourite'}</button>
+      <button data-act="move">📁 Move to Folder</button>
+      <button class="danger" data-act="delete">🗑 Delete</button>`;
+    menu.querySelector('[data-act="fav"]').onclick = () => { closeFloatingMenu(); toggleFavourite(id); };
+    menu.querySelector('[data-act="move"]').onclick = () => { closeFloatingMenu(); openMoveModal(id); };
+    menu.querySelector('[data-act="delete"]').onclick = () => { closeFloatingMenu(); deleteNoteById(id); };
+  });
+}
+
+// Chuột-phải vào 1 folder trong sidebar
+function openFolderContextMenu(folderId, x, y) {
+  const folder = folderById(folderId);
+  if (!folder) return;
+
+  openFloatingMenu(x, y, null, (menu) => {
+    menu.innerHTML = `
+      <button data-act="rename">✏️ Rename</button>
+      <button class="danger" data-act="delete">🗑 Delete folder</button>`;
+    menu.querySelector('[data-act="rename"]').onclick = () => { closeFloatingMenu(); renameFolder(folderId); };
+    menu.querySelector('[data-act="delete"]').onclick = () => { closeFloatingMenu(); deleteFolderById(folderId); };
+  });
+}
+
+// Dropdown chọn nhanh cho ô nhập số (Size/Spacing) — không thay thế việc gõ tay,
+// chỉ là lối tắt: bấm nút mũi tên cạnh ô số để chọn nhanh một giá trị có sẵn.
+function openValuePicker(input, values, formatLabel) {
+  const toggle = input.parentElement.querySelector('.combo-toggle');
+  const r = toggle.getBoundingClientRect();
+
+  openFloatingMenu(r.left, r.bottom + 6, 'value-picker', (menu) => {
+    const current = Number(input.value);
+    for (const v of values) {
+      const b = document.createElement('button');
+      b.textContent = formatLabel(v);
+      if (v === current) b.classList.add('is-current');
+      b.onclick = () => {
+        closeFloatingMenu();
+        input.value = v;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      menu.appendChild(b);
+    }
+  });
+}
+
 // ---------------- Modals ----------------
 
 function closeModal() { $('#modal-root').hidden = true; }
@@ -400,32 +624,77 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('#modal-root').hidden) closeModal();
 });
 
+// Modal tạo folder mới — có chọn màu ngay lúc tạo, khỏi phải mở lại folder để đổi màu sau
+function newFolderModal() {
+  return new Promise((resolve) => {
+    const colorIds = Object.keys(FOLDER_COLORS);
+    let selected = colorIds[liveFolders().length % colorIds.length];
+
+    $('#modal-title').textContent = 'New folder';
+    $('#modal-body').innerHTML =
+      `<p>Folder name</p><input type="text" id="prompt-input" />` +
+      `<p style="margin-top:16px">Color</p><div class="swatches" id="new-folder-colors"></div>`;
+
+    const input = $('#prompt-input');
+    const picker = $('#new-folder-colors');
+    for (const id of colorIds) {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'swatch-btn' + (id === selected ? ' is-active' : '');
+      dot.style.background = FOLDER_COLORS[id];
+      dot.title = id;
+      dot.onclick = () => {
+        selected = id;
+        picker.querySelectorAll('.swatch-btn').forEach((d) => d.classList.remove('is-active'));
+        dot.classList.add('is-active');
+      };
+      picker.appendChild(dot);
+    }
+
+    const foot = $('#modal-foot');
+    foot.innerHTML = '';
+    const no = document.createElement('button');
+    no.className = 'ghost-btn';
+    no.textContent = 'Cancel';
+    no.onclick = () => { closeModal(); resolve(null); };
+    const yes = document.createElement('button');
+    yes.className = 'btn-primary';
+    yes.textContent = 'Create';
+    yes.onclick = () => { closeModal(); resolve({ name: input.value, color: selected }); };
+    foot.append(no, yes);
+
+    input.onkeydown = (e) => { if (e.key === 'Enter') yes.click(); };
+    $('#modal-root').hidden = false;
+    input.focus();
+  });
+}
+
 // ---------------- Folder actions ----------------
 
 $('#btn-new-folder').onclick = async () => {
-  const name = await promptModal({ title: 'New folder', label: 'Folder name', confirm: 'Create' });
-  if (name === null) return;
-  const colors = Object.keys(FOLDER_COLORS);
-  const folder = await db.createFolder(name, colors[liveFolders().length % colors.length]);
+  const result = await newFolderModal();
+  if (!result) return;
+  const folder = await db.createFolder(result.name, result.color);
   await refresh();
   state.view = 'folder';
   state.folderId = folder.id;
   render();
 };
 
-$('[data-act="rename"]').onclick = async () => {
-  const folder = folderById(state.folderId);
+// Dùng chung cho cả nút Rename/Delete ở header Folder view lẫn menu chuột-phải trên sidebar
+async function renameFolder(folderId) {
+  const folder = folderById(folderId);
   if (!folder) return;
   const name = await promptModal({ title: 'Rename folder', label: 'Folder name', value: folder.name });
   if (name === null || !name.trim()) return;
   await db.updateFolder(folder.id, { name: name.trim() });
   await refresh();
   render();
-};
+}
 
 // Xoá folder → modal cảnh báo rõ số note bị ảnh hưởng (spec bắt buộc)
-$('[data-act="delete-folder"]').onclick = async () => {
-  const folder = folderById(state.folderId);
+async function deleteFolderById(folderId) {
+  const folder = folderById(folderId);
   if (!folder) return;
   const n = notesInFolder(folder.id).length;
   const ok = await confirmModal({
@@ -441,11 +710,18 @@ $('[data-act="delete-folder"]').onclick = async () => {
   if (!ok) return;
   await db.softDeleteFolder(folder.id);
   await refresh();
-  state.view = 'all';
-  state.folderId = null;
+  // Chỉ điều hướng về All Notes nếu đúng folder đang mở bị xoá; xoá folder khác
+  // (vd từ menu chuột-phải trên sidebar) thì giữ nguyên view hiện tại.
+  if (state.view === 'folder' && state.folderId === folderId) {
+    state.view = 'all';
+    state.folderId = null;
+  }
   render();
   toast(n ? `Moved folder and ${plural(n, 'note')} to Trash` : 'Moved folder to Trash');
-};
+}
+
+$('[data-act="rename"]').onclick = () => renameFolder(state.folderId);
+$('[data-act="delete-folder"]').onclick = () => deleteFolderById(state.folderId);
 
 // ---------------- Nav / filters / search ----------------
 
@@ -484,14 +760,17 @@ $('#btn-empty-trash').onclick = async () => {
 const contentEl = $('#note-content');
 const titleEl = $('#note-title');
 
-$('#btn-new-note').onclick = async () => {
+// Dùng chung cho nút "+ New Note" trên header lẫn nút CTA trong empty state
+async function createNoteInCurrentView() {
   // Tạo note ngay trong folder đang mở → gán sẵn folderId, không cần move thêm
   const folderId = state.view === 'folder' ? state.folderId : null;
   const note = await db.createNote({ folderId });
   await refresh();
   openEditor(note.id);
   titleEl.focus();
-};
+}
+
+$('#btn-new-note').onclick = createNoteInCurrentView;
 
 function openEditor(id) {
   const note = state.notes.find((n) => n.id === id);
@@ -501,6 +780,7 @@ function openEditor(id) {
 
   titleEl.value = note.title;
   contentEl.innerHTML = note.content;
+  savedContentRange = null; // tránh dính range của note vừa đóng trước đó
 
   applyNoteStyle(note);
   renderEditorChrome(note);
@@ -529,11 +809,9 @@ function applyNoteStyle(note) {
   sheet.style.setProperty('--note-size', `${note.fontSize || 16}px`);
   sheet.style.setProperty('--note-lh', note.lineHeight || 1.6);
 
-  $('#opt-font').value = note.font || 'sans';
+  setFontTrigger(note.font || 'sans');
   $('#opt-size').value = note.fontSize || 16;
-  $('#opt-spacing').value = note.lineHeight || 1.6;
-  $('#size-val').textContent = `${note.fontSize || 16}px`;
-  $('#spacing-val').textContent = note.lineHeight || 1.6;
+  $('#opt-spacing').value = (note.lineHeight || 1.6).toFixed(1); // luôn hiện đúng 1 chữ số thập phân, vd "1.6" chứ không phải "1.6000000000001"
 
   $$('.swatch-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.theme === (note.theme || 'default')));
 }
@@ -560,6 +838,10 @@ function updateWordCount() {
 
 let saveTimer = null;
 let pendingPatch = null;
+
+// Vùng bôi đen gần nhất trong note-content — bấm vào ô Size/nút ▾ sẽ chuyển focus
+// và huỷ mất selection thật, nên phải lưu lại liên tục qua "selectionchange" để dùng lại sau.
+let savedContentRange = null;
 
 function queueSave(patch) {
   if (!state.editing) return;
@@ -600,77 +882,11 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-// ---- Editor quick actions ----
+// ---- Editor quick actions (dùng lại các hàm dùng chung ở trên) ----
 
-$('#btn-fav').onclick = async () => {
-  if (!state.editing) return;
-  const isFavourite = !state.editing.isFavourite;
-  // Favourite độc lập với folder → không đụng vào folderId
-  await db.updateNote(state.editing.id, { isFavourite }, { touch: false });
-  state.editing.isFavourite = isFavourite;
-  renderEditorChrome(state.editing);
-  toast(isFavourite ? 'Added to Favourite' : 'Removed from Favourite');
-};
-
-// Move to Folder — 1 note thuộc tối đa 1 folder
-$('#btn-move').onclick = async () => {
-  if (!state.editing) return;
-  const current = state.editing.folderId;
-
-  $('#modal-title').textContent = 'Move to Folder';
-  const list = liveFolders();
-  $('#modal-body').innerHTML =
-    `<p>A note belongs to at most 1 folder.</p><div class="modal-list" id="move-list"></div>` +
-    (list.length ? '' : '<p style="margin-top:10px">No folders yet — create one in the sidebar first.</p>');
-
-  const wrap = $('#move-list');
-  const mk = (label, color, id) => {
-    const b = document.createElement('button');
-    b.className = id === current ? 'is-current' : '';
-    b.innerHTML = `<span class="swatch" style="background:${color}"></span><span class="l"></span>${id === current ? '<span style="margin-left:auto">✓</span>' : ''}`;
-    b.querySelector('.l').textContent = label;
-    b.onclick = async () => {
-      closeModal();
-      await db.updateNote(state.editing.id, { folderId: id });
-      state.editing.folderId = id;
-      renderEditorChrome(state.editing);
-      toast(id ? `Moved to "${label}"` : 'Moved to All Notes');
-    };
-    return b;
-  };
-
-  wrap.appendChild(mk('All Notes (no folder)', '#c9c3b9', null));
-  for (const f of list) wrap.appendChild(mk(f.name, FOLDER_COLORS[f.color], f.id));
-
-  const foot = $('#modal-foot');
-  foot.innerHTML = '';
-  const close = document.createElement('button');
-  close.className = 'ghost-btn';
-  close.textContent = 'Close';
-  close.onclick = closeModal;
-  foot.appendChild(close);
-  $('#modal-root').hidden = false;
-};
-
-$('#btn-del-note').onclick = async () => {
-  if (!state.editing) return;
-  const ok = await confirmModal({
-    title: 'Delete note?',
-    body: '<p>The note moves to Trash and can be restored within 30 days.</p>',
-    confirm: 'Delete',
-    danger: true,
-  });
-  if (!ok) return;
-  pendingPatch = null;
-  clearTimeout(saveTimer);
-  await db.softDeleteNote(state.editing.id);
-  state.editing = null;
-  $('#editor').hidden = true;
-  $('#app').classList.remove('is-hidden');
-  await refresh();
-  render();
-  toast('Note moved to Trash');
-};
+$('#btn-fav').onclick = () => state.editing && toggleFavourite(state.editing.id);
+$('#btn-move').onclick = () => state.editing && openMoveModal(state.editing.id);
+$('#btn-del-note').onclick = () => state.editing && deleteNoteById(state.editing.id);
 
 $('#btn-panel').onclick = () => $('#panel').classList.toggle('is-hidden');
 
@@ -694,23 +910,114 @@ for (const t of THEMES) {
 
 // ---- Panel: Text Editor ----
 
-$('#opt-font').onchange = (e) => {
-  queueSave({ font: e.target.value });
-  $('.editor-sheet').style.setProperty('--note-font', FONTS[e.target.value]);
+function setFontTrigger(fontId) {
+  const trigger = $('#opt-font');
+  trigger.dataset.value = fontId;
+  trigger.querySelector('.picker-trigger-label').textContent =
+    FONT_OPTIONS.find((f) => f.id === fontId)?.label ?? 'Sans';
+}
+
+// Panel tự vẽ (giống value-picker) thay cho <select> gốc — mỗi lựa chọn hiện đúng
+// kiểu chữ tương ứng để xem trước, và khớp phong cách viền đậm/bóng cứng của cả app.
+function openFontPicker() {
+  const trigger = $('#opt-font');
+  const r = trigger.getBoundingClientRect();
+  const current = trigger.dataset.value;
+
+  openFloatingMenu(r.left, r.bottom + 6, null, (menu) => {
+    for (const f of FONT_OPTIONS) {
+      const b = document.createElement('button');
+      b.textContent = f.label;
+      b.style.fontFamily = FONTS[f.id];
+      if (f.id === current) b.classList.add('is-current');
+      b.onclick = () => {
+        closeFloatingMenu();
+        setFontTrigger(f.id);
+        applyFontChange(f.id);
+      };
+      menu.appendChild(b);
+    }
+  });
+}
+
+$('#opt-font').onclick = openFontPicker;
+
+// Dùng chung cho Size và Font: nếu đang có đoạn văn bản được bôi đen (còn nhớ trong
+// savedContentRange) thì chỉ áp dụng riêng cho đoạn đó bằng cách bọc trong 1 <span style="...">,
+// không đụng phần còn lại của note. Không có đoạn nào đang chọn thì gọi applyGlobally()
+// để giữ hành vi cũ: áp dụng cho mặc định của cả note.
+function applyInlineStyleToSelectionOrGlobal(cssProp, cssValue, applyGlobally) {
+  const sel = window.getSelection();
+  const hasSelection = savedContentRange && !savedContentRange.collapsed;
+
+  if (!hasSelection) {
+    applyGlobally();
+    return;
+  }
+
+  contentEl.focus();
+  sel.removeAllRanges();
+  sel.addRange(savedContentRange);
+
+  const range = sel.getRangeAt(0);
+  const span = document.createElement('span');
+  span.style[cssProp] = cssValue;
+  span.appendChild(range.extractContents());
+  range.insertNode(span);
+
+  // Chọn lại đúng đoạn vừa bọc, để có thể đổi tiếp hoặc thấy rõ vùng vừa áp dụng
+  const newRange = document.createRange();
+  newRange.selectNodeContents(span);
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+  savedContentRange = newRange.cloneRange();
+
+  queueSave({ content: contentEl.innerHTML });
+  updateWordCount();
+}
+
+function applyFontSizeChange(v) {
+  applyInlineStyleToSelectionOrGlobal('fontSize', `${v}px`, () => {
+    queueSave({ fontSize: v });
+    $('.editor-sheet').style.setProperty('--note-size', `${v}px`);
+  });
+}
+
+function applyFontChange(fontId) {
+  applyInlineStyleToSelectionOrGlobal('fontFamily', FONTS[fontId], () => {
+    queueSave({ font: fontId });
+    $('.editor-sheet').style.setProperty('--note-font', FONTS[fontId]);
+  });
+}
+
+// onchange (không phải oninput) để không ghi đè giá trị đang gõ dở giữa chừng.
+// Không giới hạn khoảng giá trị — người dùng gõ số gì cũng được, chỉ chặn
+// NaN/rỗng/số ≤ 0 vì font-size hoặc line-height ≤ 0 làm chữ biến mất hẳn, không phải là giới hạn phạm vi.
+$('#opt-size').onchange = (e) => {
+  let v = Math.round(Number(e.target.value));
+  if (!Number.isFinite(v) || v <= 0) v = state.editing?.fontSize || 16;
+  e.target.value = v;
+  applyFontSizeChange(v);
 };
 
-$('#opt-size').oninput = (e) => {
-  const v = Number(e.target.value);
-  queueSave({ fontSize: v });
-  $('.editor-sheet').style.setProperty('--note-size', `${v}px`);
-  $('#size-val').textContent = `${v}px`;
-};
-
-$('#opt-spacing').oninput = (e) => {
-  const v = Number(e.target.value);
+$('#opt-spacing').onchange = (e) => {
+  let v = Number(e.target.value);
+  if (!Number.isFinite(v) || v <= 0) v = state.editing?.lineHeight || 1.6;
+  v = Math.round(v * 10) / 10;
+  e.target.value = v.toFixed(1);
   queueSave({ lineHeight: v });
   $('.editor-sheet').style.setProperty('--note-lh', v);
-  $('#spacing-val').textContent = v;
+};
+
+// Nút mũi tên cạnh ô số — cách nhanh để chọn mà không cần gõ tay
+$('#opt-size-toggle').onclick = () => {
+  const sizes = Array.from({ length: 24 - 13 + 1 }, (_, i) => 13 + i);
+  openValuePicker($('#opt-size'), sizes, (v) => `${v}px`);
+};
+
+$('#opt-spacing-toggle').onclick = () => {
+  const spacings = Array.from({ length: 13 }, (_, i) => Math.round((1.2 + i * 0.1) * 10) / 10);
+  openValuePicker($('#opt-spacing'), spacings, (v) => v.toFixed(1));
 };
 
 // Giữ selection trong contenteditable khi bấm nút trên panel
@@ -738,6 +1045,18 @@ function syncFmtState() {
   $$('.fmt').forEach((b) => {
     try { b.classList.toggle('is-on', document.queryCommandState(b.dataset.cmd)); } catch { /* ignore */ }
   });
+
+  // Đang có đoạn thật sự được bôi đen trong content -> lưu lại để dùng sau khi
+  // focus rời khỏi note-content (vd bấm sang ô Size, selection lúc đó không còn
+  // phản ánh đúng nữa). Nhưng nếu selection collapse NGAY TRONG content (người
+  // dùng bấm/gõ chỗ khác để chủ động huỷ chọn) thì phải xoá savedContentRange —
+  // nếu không, lần đổi Size tiếp theo (tưởng là áp dụng cho cả note) sẽ áp nhầm
+  // vào đoạn đã chọn từ trước đó, dán chồng span lên chính nó.
+  if (!sel.isCollapsed) {
+    savedContentRange = sel.getRangeAt(0).cloneRange();
+  } else {
+    savedContentRange = null;
+  }
 }
 document.addEventListener('selectionchange', syncFmtState);
 
