@@ -3,7 +3,7 @@ import { $ } from './dom.js';
 import { state } from './state.js';
 import { refresh, folderById, notesInFolder } from './queries.js';
 import { render } from './render.js';
-import { promptModal, confirmModal, newFolderModal } from './modals.js';
+import { promptModal, confirmModal, newFolderModal, editFolderModal } from './modals.js';
 import { plural, escapeHtml, toast } from './utils.js';
 import { openFloatingMenu, closeFloatingMenu } from './floatingMenu.js';
 
@@ -12,7 +12,7 @@ import { openFloatingMenu, closeFloatingMenu } from './floatingMenu.js';
 $('#btn-new-folder').onclick = async () => {
   const result = await newFolderModal();
   if (!result) return;
-  const folder = await db.createFolder(result.name, result.color);
+  const folder = await db.createFolder(result.name, result.color, result.icon);
   await refresh();
   state.view = 'folder';
   state.folderId = folder.id;
@@ -26,6 +26,18 @@ export async function renameFolder(folderId) {
   const name = await promptModal({ title: 'Rename folder', label: 'Folder name', value: folder.name });
   if (name === null || !name.trim()) return;
   await db.updateFolder(folder.id, { name: name.trim() });
+  await refresh();
+  render();
+}
+
+// Đổi tên + màu cùng lúc — dùng cho nút "Edit folder" ở header Folder view
+export async function editFolder(folderId) {
+  const folder = folderById(folderId);
+  if (!folder) return;
+  const result = await editFolderModal(folder);
+  if (!result) return;
+  const name = result.name.trim() || folder.name;
+  await db.updateFolder(folder.id, { name, color: result.color, icon: result.icon });
   await refresh();
   render();
 }
@@ -58,7 +70,7 @@ export async function deleteFolderById(folderId) {
   toast(n ? `Moved folder and ${plural(n, 'note')} to Trash` : 'Moved folder to Trash');
 }
 
-$('[data-act="rename"]').onclick = () => renameFolder(state.folderId);
+$('[data-act="edit-folder"]').onclick = () => editFolder(state.folderId);
 $('[data-act="delete-folder"]').onclick = () => deleteFolderById(state.folderId);
 
 // Chuột-phải vào 1 folder trong sidebar

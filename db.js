@@ -78,6 +78,7 @@ export async function createNote({ folderId = null } = {}) {
     content: '',
     folderId,
     isFavourite: false,
+    icon: null,
     theme: 'default',
     font: 'sans',
     fontSize: 16,
@@ -131,12 +132,13 @@ export async function purgeNote(id) {
 
 // ---------- Folders ----------
 
-export async function createFolder(name, color) {
+export async function createFolder(name, color, icon = null) {
   const folder = {
     id: uuid(),
     name: name.trim() || 'Untitled folder',
 
     color: color || 'blue',
+    icon: icon || null,
     createdAt: Date.now(),
     deletedAt: null,
   };

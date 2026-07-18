@@ -54,8 +54,7 @@
         <h1 id="list-title">All Notes</h1>
         <span id="list-count" class="list-count"></span>
         <div id="folder-actions" class="folder-actions" hidden>
-          <button class="ghost-btn" data-act="rename">Rename</button>
-          <div class="color-picker" id="folder-colors"></div>
+          <button class="ghost-btn" data-act="edit-folder">Edit folder</button>
           <button class="ghost-btn danger" data-act="delete-folder">Delete folder</button>
         </div>
       </div>
@@ -95,14 +94,16 @@
       <button id="btn-fav" class="icon-action" title="Favourite">☆</button>
       <button id="btn-move" class="icon-action" title="Move to Folder">📁</button>
       <button id="btn-del-note" class="icon-action" title="Delete">🗑</button>
-      <button id="btn-panel" class="icon-action" title="Customize">⚙</button>
     </div>
   </header>
 
   <div class="editor-body">
     <div class="editor-page">
       <div class="editor-sheet">
-        <input id="note-title" class="note-title" placeholder="Title…" />
+        <div class="note-title-row">
+          <button type="button" id="note-icon-btn" class="note-icon-btn" title="Choose icon">🏷</button>
+          <input id="note-title" class="note-title" placeholder="Title…" />
+        </div>
         <div class="note-meta">
           <span id="meta-dates"></span>
           <span class="dot">·</span>
@@ -182,7 +183,30 @@
       <div class="panel-group">
         <h3>Others</h3>
         <div class="btn-row wrap">
-          <button class="chip" id="ins-image">🖼 Image</button>
+          <button class="chip" id="ins-image">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <defs>
+                <linearGradient id="imgGradBg" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#8ec9f5"/>
+                  <stop offset="1" stop-color="#3f7fd6"/>
+                </linearGradient>
+                <linearGradient id="imgGradSun" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#ffd166"/>
+                  <stop offset="1" stop-color="#f4845f"/>
+                </linearGradient>
+                <linearGradient id="imgGradMtn" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#8bc76a"/>
+                  <stop offset="1" stop-color="#5aa63f"/>
+                </linearGradient>
+              </defs>
+              <rect x="1" y="1" width="22" height="22" rx="6" fill="url(#imgGradBg)"/>
+              <circle cx="16" cy="8" r="3" fill="url(#imgGradSun)"/>
+              <circle cx="6.5" cy="9" r="2.6" fill="#fff" opacity=".85"/>
+              <circle cx="9" cy="8" r="3.2" fill="#fff" opacity=".85"/>
+              <path d="M2 21 L9 11 L14 17 L17 13 L22 21 Z" fill="url(#imgGradMtn)"/>
+            </svg>
+            Image
+          </button>
           <button class="chip" id="ins-link">🔗 Link</button>
           <button class="chip" id="ins-bullet">• Bullets</button>
           <button class="chip" id="ins-emoji">😀 Emoji</button>

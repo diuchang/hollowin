@@ -12,6 +12,13 @@ import { openNoteContextMenu } from './noteActions.js';
 import { openFolderContextMenu } from './folderActions.js';
 import { openEditor, createNoteInCurrentView } from './editor.js';
 
+// Dấu hiệu nhận diện folder: ưu tiên icon nếu người dùng đã chọn, không thì chấm màu.
+// f.icon lấy từ FOLDER_ICONS (emoji cố định) nên an toàn khi nhúng thẳng.
+const folderMarker = (f) =>
+  f.icon
+    ? `<span class="folder-ico">${f.icon}</span>`
+    : `<span class="swatch" style="background:${FOLDER_COLORS[f.color] || FOLDER_COLORS.blue}"></span>`;
+
 // ---------------- Render: sidebar ----------------
 
 function renderSidebar() {
@@ -37,7 +44,7 @@ function renderSidebar() {
     const btn = document.createElement('button');
     btn.className = 'folder-item' + (state.view === 'folder' && state.folderId === f.id ? ' is-active' : '');
     btn.innerHTML = `
-      <span class="swatch" style="background:${FOLDER_COLORS[f.color] || FOLDER_COLORS.blue}"></span>
+      ${folderMarker(f)}
       <span class="name"></span>
       <span class="n">${notesInFolder(f.id).length || ''}</span>`;
     btn.querySelector('.name').textContent = f.name;
@@ -78,23 +85,6 @@ function renderHead() {
     ? `<span class="plus">+</span> New Note in ${escapeHtml(folder?.name ?? '')}`
     : '<span class="plus">+</span> New Note';
 
-  if (isFolder && folder) {
-    const picker = $('#folder-colors');
-    picker.innerHTML = '';
-    for (const [id, hex] of Object.entries(FOLDER_COLORS)) {
-      const dot = document.createElement('button');
-      dot.className = 'color-dot' + (folder.color === id ? ' is-active' : '');
-      dot.style.background = hex;
-      dot.title = id;
-      dot.onclick = async () => {
-        await db.updateFolder(folder.id, { color: id });
-        await refresh();
-        render();
-      };
-      picker.appendChild(dot);
-    }
-  }
-
   $$('.filter').forEach((b) => b.classList.toggle('is-active', b.dataset.range === state.range));
 }
 
@@ -117,14 +107,14 @@ function renderList() {
     const folder = n.folderId ? folderById(n.folderId) : null;
     card.innerHTML = `
       ${n.isFavourite ? '<span class="card-star">⭐</span>' : ''}
-      <span class="card-title"></span>
+      <span class="card-title">${n.icon ? `<span class="card-icon">${n.icon}</span>` : ''}<span class="title-text"></span></span>
       <span class="card-preview"></span>
       <span class="card-foot">
         <span class="when"></span>
-        ${folder ? `<span class="chip-folder"><span class="swatch" style="background:${FOLDER_COLORS[folder.color]}"></span><span class="fname"></span></span>` : ''}
+        ${folder ? `<span class="chip-folder">${folderMarker(folder)}<span class="fname"></span></span>` : ''}
       </span>`;
 
-    card.querySelector('.card-title').textContent = displayTitle(n);
+    card.querySelector('.title-text').textContent = displayTitle(n);
     card.querySelector('.card-preview').textContent = htmlToText(n.content) || 'Empty note';
     card.querySelector('.when').textContent = fmtDate(n.updatedAt);
     if (folder) card.querySelector('.fname').textContent = folder.name;

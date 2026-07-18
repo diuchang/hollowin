@@ -3,7 +3,7 @@ import { $, $$ } from './dom.js';
 import { state } from './state.js';
 import { refresh } from './queries.js';
 import { render } from './render.js';
-import { THEMES, FONTS, FONT_OPTIONS, EMOJIS } from './constants.js';
+import { THEMES, FONTS, FONT_OPTIONS, EMOJIS, NOTE_ICONS } from './constants.js';
 import { fmtDate, plural, escapeHtml, htmlToText } from './utils.js';
 import { folderById } from './queries.js';
 import { toggleFavourite, openMoveModal, deleteNoteById } from './noteActions.js';
@@ -81,6 +81,7 @@ function applyNoteStyle(note) {
   $('#opt-spacing').value = (note.lineHeight || 1.6).toFixed(1); // luôn hiện đúng 1 chữ số thập phân, vd "1.6" chứ không phải "1.6000000000001"
 
   $$('.swatch-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.theme === (note.theme || 'default')));
+  setIconTrigger(note.icon || null);
 }
 
 export function renderEditorChrome(note) {
@@ -155,8 +156,6 @@ $('#btn-fav').onclick = () => state.editing && toggleFavourite(state.editing.id)
 $('#btn-move').onclick = () => state.editing && openMoveModal(state.editing.id);
 $('#btn-del-note').onclick = () => state.editing && deleteNoteById(state.editing.id);
 
-$('#btn-panel').onclick = () => $('#panel').classList.toggle('is-hidden');
-
 // ---- Panel: Theme Style ----
 
 const swatchWrap = $('#theme-swatches');
@@ -174,6 +173,49 @@ for (const t of THEMES) {
   };
   swatchWrap.appendChild(b);
 }
+
+// ---- Note icon (shown next to the title) ----
+
+function setIconTrigger(icon) {
+  const btn = $('#note-icon-btn');
+  btn.textContent = icon || '🏷';
+  btn.classList.toggle('is-set', !!icon);
+}
+
+function openIconPicker() {
+  const trigger = $('#note-icon-btn');
+  const r = trigger.getBoundingClientRect();
+  const current = state.editing?.icon || null;
+
+  openFloatingMenu(r.left, r.bottom + 6, 'icon-picker', (menu) => {
+    const noneBtn = document.createElement('button');
+    noneBtn.textContent = 'No icon';
+    if (!current) noneBtn.classList.add('is-current');
+    noneBtn.onclick = () => {
+      closeFloatingMenu();
+      setIconTrigger(null);
+      queueSave({ icon: null });
+    };
+    menu.appendChild(noneBtn);
+
+    const grid = document.createElement('div');
+    grid.className = 'icon-grid';
+    for (const ic of NOTE_ICONS) {
+      const b = document.createElement('button');
+      b.textContent = ic;
+      if (ic === current) b.classList.add('is-current');
+      b.onclick = () => {
+        closeFloatingMenu();
+        setIconTrigger(ic);
+        queueSave({ icon: ic });
+      };
+      grid.appendChild(b);
+    }
+    menu.appendChild(grid);
+  });
+}
+
+$('#note-icon-btn').onclick = openIconPicker;
 
 // ---- Panel: Text Editor ----
 
