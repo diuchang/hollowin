@@ -35,7 +35,6 @@ export function openEditor(id) {
 
   titleEl.value = note.title;
   contentEl.innerHTML = note.content;
-  savedContentRange = null; // tránh dính range của note vừa đóng trước đó
 
   applyNoteStyle(note);
   renderEditorChrome(note);
@@ -107,10 +106,6 @@ function updateWordCount() {
 let saveTimer = null;
 let pendingPatch = null;
 
-// Vùng bôi đen gần nhất trong note-content — bấm vào ô Size/nút ▾ sẽ chuyển focus
-// và huỷ mất selection thật, nên phải lưu lại liên tục qua "selectionchange" để dùng lại sau.
-let savedContentRange = null;
-
 function queueSave(patch) {
   if (!state.editing) return;
   pendingPatch = { ...(pendingPatch || {}), ...patch };
@@ -131,6 +126,9 @@ async function flushSave() {
   pendingPatch = null;
   const next = await db.updateNote(state.editing.id, patch);
   if (next && state.editing) {
+    // id = đường dẫn file; đổi title/move làm đổi tên file → phải theo id mới,
+    // nếu không lần lưu sau sẽ trỏ vào file đã bị đổi tên và mất dữ liệu.
+    state.editing.id = next.id;
     state.editing.updatedAt = next.updatedAt;
     $('#meta-dates').textContent = `Created ${fmtDate(next.createdAt)} · Edited ${fmtDate(next.updatedAt)}`;
   }
@@ -251,52 +249,16 @@ function openFontPicker() {
 
 $('#opt-font').onclick = openFontPicker;
 
-// Dùng chung cho Size và Font: nếu đang có đoạn văn bản được bôi đen (còn nhớ trong
-// savedContentRange) thì chỉ áp dụng riêng cho đoạn đó bằng cách bọc trong 1 <span style="...">,
-// không đụng phần còn lại của note. Không có đoạn nào đang chọn thì gọi applyGlobally()
-// để giữ hành vi cũ: áp dụng cho mặc định của cả note.
-function applyInlineStyleToSelectionOrGlobal(cssProp, cssValue, applyGlobally) {
-  const sel = window.getSelection();
-  const hasSelection = savedContentRange && !savedContentRange.collapsed;
-
-  if (!hasSelection) {
-    applyGlobally();
-    return;
-  }
-
-  contentEl.focus();
-  sel.removeAllRanges();
-  sel.addRange(savedContentRange);
-
-  const range = sel.getRangeAt(0);
-  const span = document.createElement('span');
-  span.style[cssProp] = cssValue;
-  span.appendChild(range.extractContents());
-  range.insertNode(span);
-
-  // Chọn lại đúng đoạn vừa bọc, để có thể đổi tiếp hoặc thấy rõ vùng vừa áp dụng
-  const newRange = document.createRange();
-  newRange.selectNodeContents(span);
-  sel.removeAllRanges();
-  sel.addRange(newRange);
-  savedContentRange = newRange.cloneRange();
-
-  queueSave({ content: contentEl.innerHTML });
-  updateWordCount();
-}
-
+// Font và Size áp cho MẶC ĐỊNH của cả note (lưu vào metadata note.font/fontSize).
+// Markdown không biểu diễn được kiểu chữ theo từng đoạn bôi đen, nên bỏ nhánh đó.
 function applyFontSizeChange(v) {
-  applyInlineStyleToSelectionOrGlobal('fontSize', `${v}px`, () => {
-    queueSave({ fontSize: v });
-    $('.editor-sheet').style.setProperty('--note-size', `${v}px`);
-  });
+  queueSave({ fontSize: v });
+  $('.editor-sheet').style.setProperty('--note-size', `${v}px`);
 }
 
 function applyFontChange(fontId) {
-  applyInlineStyleToSelectionOrGlobal('fontFamily', FONTS[fontId], () => {
-    queueSave({ font: fontId });
-    $('.editor-sheet').style.setProperty('--note-font', FONTS[fontId]);
-  });
+  queueSave({ font: fontId });
+  $('.editor-sheet').style.setProperty('--note-font', FONTS[fontId]);
 }
 
 // onchange (không phải oninput) để không ghi đè giá trị đang gõ dở giữa chừng.
@@ -354,18 +316,6 @@ function syncFmtState() {
   $$('.fmt').forEach((b) => {
     try { b.classList.toggle('is-on', document.queryCommandState(b.dataset.cmd)); } catch { /* ignore */ }
   });
-
-  // Đang có đoạn thật sự được bôi đen trong content -> lưu lại để dùng sau khi
-  // focus rời khỏi note-content (vd bấm sang ô Size, selection lúc đó không còn
-  // phản ánh đúng nữa). Nhưng nếu selection collapse NGAY TRONG content (người
-  // dùng bấm/gõ chỗ khác để chủ động huỷ chọn) thì phải xoá savedContentRange —
-  // nếu không, lần đổi Size tiếp theo (tưởng là áp dụng cho cả note) sẽ áp nhầm
-  // vào đoạn đã chọn từ trước đó, dán chồng span lên chính nó.
-  if (!sel.isCollapsed) {
-    savedContentRange = sel.getRangeAt(0).cloneRange();
-  } else {
-    savedContentRange = null;
-  }
 }
 document.addEventListener('selectionchange', syncFmtState);
 
@@ -389,21 +339,6 @@ $('#ins-link').onclick = async () => {
     document.execCommand('createLink', false, url);
   }
   queueSave({ content: contentEl.innerHTML });
-};
-
-$('#ins-image').onclick = () => $('#image-input').click();
-
-$('#image-input').onchange = (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    contentEl.focus();
-    document.execCommand('insertImage', false, reader.result);
-    queueSave({ content: contentEl.innerHTML });
-  };
-  reader.readAsDataURL(file);
-  e.target.value = '';
 };
 
 const emojiGrid = $('#emoji-grid');

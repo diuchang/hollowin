@@ -1,3 +1,6 @@
 node_modules/
 .DS_Store
 *.log
+
+# Runtime data — notes vault is created/seeded at runtime
+notes/

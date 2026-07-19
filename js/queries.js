@@ -5,9 +5,12 @@ import { rangeStart, displayTitle, htmlToText } from './utils.js';
 // ---------------- Data refresh ----------------
 
 export async function refresh() {
-  const [notes, folders] = await Promise.all([db.getAllNotes(), db.getAllFolders()]);
+  const [notes, folders, insights] = await Promise.all([
+    db.getAllNotes(), db.getAllFolders(), db.getInsights(),
+  ]);
   state.notes = notes;
   state.folders = folders;
+  state.insights = insights;
 }
 
 export const liveFolders = () =>

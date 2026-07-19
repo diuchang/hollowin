@@ -49,9 +49,11 @@ export function openMoveModal(id) {
     b.querySelector('.l').textContent = label;
     b.onclick = async () => {
       closeModalRef();
-      await db.updateNote(id, { folderId });
+      // updateNote đổi folder => file chuyển thư mục => id (đường dẫn) đổi theo.
+      const moved = await db.updateNote(id, { folderId });
       await refresh();
       if (state.editing?.id === id) {
+        state.editing.id = moved?.id ?? id;
         state.editing.folderId = folderId;
         renderEditorChrome(state.editing);
       } else {

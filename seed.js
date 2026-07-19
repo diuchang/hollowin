@@ -114,7 +114,7 @@ export async function seedIfEmpty() {
 
   const [notes, folders] = await Promise.all([db.getAllNotes(), db.getAllFolders()]);
   if (notes.length || folders.length) {
-    // Database đã có sẵn dữ liệu (bản cài cũ) → đánh dấu để khỏi đụng vào.
+    // notes/ đã có sẵn dữ liệu → đánh dấu để khỏi đụng vào.
     localStorage.setItem(FLAG, '1');
     return false;
   }
@@ -130,8 +130,12 @@ export async function seedIfEmpty() {
   }
 
   for (const n of NOTES) {
-    const note = await db.createNote({ folderId: n.folder ? folderId[n.folder] : null });
-    await db.updateNote(note.id, {
+    const created = await db.createNote({ folderId: n.folder ? folderId[n.folder] : null });
+
+    // updateNote có thể đổi tên/đường dẫn file khi title đổi → phải dùng id nó trả về
+    // cho các lần cập nhật tiếp theo, không giữ id cũ.
+    const at = ago(n.days ?? 0);
+    const saved = await db.updateNote(created.id, {
       title: n.title,
       content: n.content,
       isFavourite: !!n.fav,
@@ -139,13 +143,14 @@ export async function seedIfEmpty() {
       font: n.font || 'sans',
       fontSize: n.fontSize || 16,
       lineHeight: n.lineHeight || 1.6,
-    });
+      createdAt: at - 2 * 3600e3,
+      updatedAt: at,
+    }, { touch: false });
 
-    // Đặt lại mốc thời gian (touch:false để updatedAt không bị ghi đè thành "bây giờ")
-    const at = ago(n.days ?? 0);
-    const patch = { createdAt: at - 2 * 3600e3, updatedAt: at };
-    if (n.trashedDaysAgo != null) patch.deletedAt = ago(n.trashedDaysAgo);
-    await db.updateNote(note.id, patch, { touch: false });
+    // Note mẫu nằm sẵn trong Trash → chuyển file vào .trash/ đúng cơ chế thật.
+    if (n.trashedDaysAgo != null) {
+      await db.softDeleteNote(saved.id, { deletedAt: ago(n.trashedDaysAgo) });
+    }
   }
 
   localStorage.setItem(FLAG, '1');
