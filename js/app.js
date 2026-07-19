@@ -11,10 +11,12 @@ import './nav.js';
 import './editor.js';
 
 // ---------------- Boot ----------------
+// Dữ liệu là các file .md thật trong ./notes/, phục vụ bởi server.js. App mở là chạy ngay,
+// không cần chọn thư mục hay cấp quyền.
 
 async function boot() {
   await db.purgeExpired();   // auto-purge Trash quá 30 ngày, chạy mỗi lần mở app
-  await seedIfEmpty();       // nạp dữ liệu mẫu, chỉ ở lần mở app đầu tiên
+  await seedIfEmpty();       // nạp dữ liệu mẫu, chỉ khi notes/ còn trống
   await refresh();
   render();
 }

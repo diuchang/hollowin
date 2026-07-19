@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "notes",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "serve", "."],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
       "port": 4173,
       "autoPort": true
     }

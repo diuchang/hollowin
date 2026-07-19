@@ -61,23 +61,32 @@ function renderSidebar() {
 
 function renderHead() {
   const isTrash = state.view === 'trash';
+  const isInsights = state.view === 'insights';
   const isFolder = state.view === 'folder';
   const folder = isFolder ? folderById(state.folderId) : null;
 
   $('#list-title').textContent = isTrash
     ? 'Trash'
+    : isInsights
+    ? 'Insights'
     : state.view === 'favourite'
     ? 'Favourite'
     : isFolder
     ? folder?.name ?? 'Folder'
     : 'All Notes';
 
-  const count = isTrash ? trashItems().length : visibleNotes().length;
-  $('#list-count').textContent = plural(count, isTrash ? 'item' : 'note');
+  // Insights không phải danh sách note nên ẩn hẳn chip đếm
+  const listCount = $('#list-count');
+  listCount.hidden = isInsights;
+  if (!isInsights) {
+    listCount.textContent = plural(isTrash ? trashItems().length : visibleNotes().length, isTrash ? 'item' : 'note');
+  }
 
-  $('#filters').hidden = isTrash;
+  // Search/filters chỉ hợp lý ở các view danh sách note
+  $('#filters').hidden = isTrash || isInsights;
   $('#trash-head').hidden = !isTrash;
-  $('.search-wrap').hidden = isTrash;
+  $('#insights-head').hidden = !isInsights;
+  $('.search-wrap').hidden = isTrash || isInsights;
   $('#folder-actions').hidden = !isFolder;
 
   // Nhãn nút "+ New Note" đổi theo folder đang mở
@@ -91,6 +100,12 @@ function renderHead() {
 // ---------------- Render: note list ----------------
 
 function renderList() {
+  const isInsights = state.view === 'insights';
+  // Insights có màn hình riêng (#insights-view); các view khác dùng #note-list
+  $('#note-list').hidden = isInsights;
+  $('#insights-view').hidden = !isInsights;
+  if (isInsights) return renderInsights();
+
   const wrap = $('#note-list');
   wrap.innerHTML = '';
 
@@ -222,6 +237,27 @@ function renderTrash(wrap) {
 
     wrap.appendChild(card);
   }
+}
+
+function renderInsights() {
+  const body = $('#insights-body');
+  const updated = $('#insights-updated');
+  const ins = state.insights;
+
+  if (!ins) {
+    updated.textContent = 'Updated Never';
+    body.innerHTML = `
+      <div class="empty-state">
+        <span class="big">📊</span>
+        <p><strong>No insights yet</strong></p>
+        <p>Chat with Claude Code or Codex and run the <code>weekly-insights</code> skill to analyse your last 7 days.</p>
+      </div>`;
+    return;
+  }
+
+  updated.textContent = ins.updatedAt ? `Updated ${fmtDate(ins.updatedAt)}` : 'Updated Never';
+  // ins.html do db.markdownToHtml dựng từ file .md — cùng đường render như note body
+  body.innerHTML = ins.html || '<p class="empty-hint">Insights file is empty.</p>';
 }
 
 export function render() {
